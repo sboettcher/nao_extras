@@ -44,6 +44,7 @@
 #include <actionlib/server/simple_action_server.h>
 #include <angles/angles.h>
 #include <assert.h>
+#include <nao_task_msgs/grasp_check.h>
 
 class PathFollower
 {
@@ -73,6 +74,8 @@ private:
 	actionlib::SimpleActionServer<nao_msgs::FollowPathAction> m_walkPathServer;
 	ros::ServiceClient m_inhibitWalkClient, m_uninhibitWalkClient;
 	ros::Subscriber m_footContactSub;
+	
+	ros::ServiceClient m_graspCheckClient;
 
 	std::string m_baseFrameId;     ///< Base frame of the robot.
 	double m_controllerFreq;       ///< Desired frequency for controller loop.
@@ -179,6 +182,8 @@ PathFollower::PathFollower()
 	m_inhibitWalkClient = nh.serviceClient<std_srvs::Empty>("inhibit_walk");
 	m_uninhibitWalkClient = nh.serviceClient<std_srvs::Empty>("uninhibit_walk");
 
+	m_graspCheckClient = nh.serviceClient<nao_task_msgs::grasp_check>("/nao_tidyup/check_grasp");
+	
 	m_visPub = privateNh.advertise<geometry_msgs::PoseStamped>("target_pose", 1, true);
 
 	// start up action server now:
@@ -603,6 +608,25 @@ void PathFollower::pathActionCB(const nao_msgs::FollowPathGoalConstPtr &goal){
          m_walkGoalServer.publishFeedback(feedback);
          */
 
+      
+      // check if a picked up object is lost
+      bool check = false;
+      nh.getParam("check_for_object", check);
+      if (check) {
+	nao_task_msgs::grasp_check srv;
+	if (m_graspCheckClient.call(srv)) {
+	  if (!srv.response.grasped) {
+	    ROS_WARN("Object lost! stopping...");
+	    stopWalk();
+	    m_walkPathServer.setAborted(nao_msgs::FollowPathResult(), "Aborting on the goal because the robot lost a picked up object");
+	    return;
+	  }
+	} else {
+	  ROS_ERROR("Failed to call service grasp_check");
+	  return;
+	}
+      }
+      
 
       double roll, pitch, yaw;
       tf::Transform relTarget = globalToBase.inverseTimes(targetPose);
