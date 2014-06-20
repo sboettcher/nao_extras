@@ -526,7 +526,9 @@ void PathFollower::pathActionCB(const nao_msgs::FollowPathGoalConstPtr &goal){
    bool targetIsEndOfPath = getNextTarget(path, globalToBase, currentPathPoseIt, targetPose, targetPathPoseIt );
    publishTargetPoseVis(targetPose);
    inhibitJoystick();
-   
+
+   double grasp_check_time = ros::Time::now().toSec();
+
    while(ros::ok()){
       if (! getRobotPose(globalToBase, global_frame_id) )
       {
@@ -609,22 +611,26 @@ void PathFollower::pathActionCB(const nao_msgs::FollowPathGoalConstPtr &goal){
          */
 
       
-      // check if a picked up object is lost
-      bool check = false;
-      nh.getParam("check_for_object", check);
-      if (check) {
-	nao_task_msgs::grasp_check srv;
-	if (m_graspCheckClient.call(srv)) {
-	  if (!srv.response.grasped) {
-	    ROS_WARN("Object lost! stopping...");
-	    stopWalk();
-	    m_walkPathServer.setAborted(nao_msgs::FollowPathResult(), "Aborting on the goal because the robot lost a picked up object");
-	    return;
-	  }
-	} else {
-	  ROS_ERROR("Failed to call service grasp_check");
-	  return;
-	}
+      // check if a picked up object is lost, once per sec
+      if (ros::Time::now().toSec() - grasp_check_time >= 1) {
+        grasp_check_time = ros::Time::now().toSec();
+        bool check = false;
+        nh.getParam("check_for_object", check);
+        if (check) {
+          nao_task_msgs::grasp_check srv;
+          ROS_DEBUG("checking for object grasp status...");
+          if (m_graspCheckClient.call(srv)) {
+            if (!srv.response.grasped) {
+              ROS_WARN("Object lost! stopping...");
+              stopWalk();
+              m_walkPathServer.setAborted(nao_msgs::FollowPathResult(), "Aborting on the goal because the robot lost a picked up object");
+              return;
+            }
+          } else {
+            ROS_ERROR("Failed to call service grasp_check");
+            return;
+          }
+        }
       }
       
 
