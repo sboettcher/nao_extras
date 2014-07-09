@@ -637,6 +637,17 @@ void PathFollower::pathActionCB(const nao_msgs::FollowPathGoalConstPtr &goal){
           }
         }
       }
+
+      // check if the bumpers have been triggered to indicate stop
+      bool bumperStop = false;
+      nh.getParam("bumper_stop", bumperStop);
+      if (bumperStop) {
+        ROS_WARN("Bumpers indicated robot arrived at container, stopping...");
+        stopWalk();
+        m_walkPathServer.setSucceeded(nao_msgs::FollowPathResult(), "Target reached");
+        nh.setParam("bumper_stop", false);
+        return;
+      }
       
 
       double roll, pitch, yaw;
