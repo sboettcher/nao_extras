@@ -628,7 +628,7 @@ void PathFollower::pathActionCB(const nao_msgs::FollowPathGoalConstPtr &goal){
             if (!srv.response.grasped) {
               ROS_WARN("Object lost! stopping...");
               stopWalk();
-              m_walkPathServer.setAborted(nao_msgs::FollowPathResult(), "Aborting on the goal because the robot lost a picked up object");
+              m_walkPathServer.setAborted(nao_msgs::FollowPathResult(), "[PATH_ABORT_GRASP] Aborting on the goal because the robot lost a picked up object");
               return;
             }
           } else {
@@ -638,21 +638,28 @@ void PathFollower::pathActionCB(const nao_msgs::FollowPathGoalConstPtr &goal){
         }
       }
 
-      // check if the bumpers have been triggered to indicate stop
-      bool bumperStop = false;
-      nh.getParam("bumper_stop", bumperStop);
-      if (bumperStop) {
-        ROS_WARN("Bumpers indicated robot arrived at container, stopping...");
-        stopWalk();
-        m_walkPathServer.setSucceeded(nao_msgs::FollowPathResult(), "Target reached");
-        nh.setParam("bumper_stop", false);
-        return;
-      }
-      
 
       double roll, pitch, yaw;
       tf::Transform relTarget = globalToBase.inverseTimes(targetPose);
       relTarget.getBasis().getRPY(roll, pitch, yaw);
+
+
+      // check if the bumpers have been triggered to indicate stop
+      bool bumperStop = false;
+      // nh.getParam("bumper_stop", bumperStop);
+      if (bumperStop) {
+        ROS_WARN("Bumpers triggered, stopping...");
+        if (relTarget.getOrigin().length()< m_targetDistThres*2 && std::abs(yaw) < m_targetAngThres*2){
+          stopWalk();
+          nh.setParam("bumper_stop", false);
+          m_walkPathServer.setSucceeded(nao_msgs::FollowPathResult(), "[PATH_SUCCEED_BUMPER] Robot is near target, target reached");
+        } else {
+          stopWalk();
+          nh.setParam("bumper_stop", false);
+          m_walkPathServer.setAborted(nao_msgs::FollowPathResult(), "[PATH_ABORT_BUMPER] Aborting because bumpers triggered but robot is not near end of path");
+        }
+        return;
+      }
 
 
       // treat last targetPose different from other waypoints on path
